@@ -1,9 +1,9 @@
 defaults:
  - _self_
- - mapping: wild.yaml
- - tracking: tum.yaml
+ - mapping: base.yaml
+ - tracking: base.yaml
  - loop_closure: eigen.yaml
- - data: TUM_RGBD/base.yaml
+ - data: C3VD/base.yaml
 
 hydra:
   run:

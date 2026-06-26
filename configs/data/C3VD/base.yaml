@@ -11,12 +11,8 @@ cam:
   W_out: 640 # 560
   H_edge: 0
   W_edge: 0
-  # fx: 401.1595
-  # fy: 400.9425
-  # cx: 334.143
-  # cy: 273.8665
-  fx: 500.0 # initial for nointrin
-  fy: 500.0
-  cx: 300.0
-  cy: 300.0
+  fx: 401.1595
+  fy: 400.9425
+  cx: 334.143
+  cy: 273.8665
   camera_model: "pinhole"
