@@ -1,0 +1,17 @@
+# @package _global_
+defaults:
+  - override /data: TartanAir/base
+  - override /tracking: tartanair
+
+tracking:
+  buffer_size: 512
+
+  motion_filter:
+    thresh: 5.0 
+
+  frontend:
+    thresh: 20.0 
+    radius: 1
+    window: 20 
+    nms: 0
+    release_cache: False

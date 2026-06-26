@@ -1,0 +1,184 @@
+defaults:
+  - /mapping/base@_here_
+
+# PGSR-enhanced mapping configuration for EDroidPGSR
+# This configuration enables PGSR's planar-based rendering and loss functions
+
+# Enable PGSR features
+use_pgsr_renderer: True
+use_pgsr_loss: True
+
+# SDF-based Manifold Projection
+# When enabled, Gaussian centres are projected onto the SDF zero level-set
+# before rendering. The SDF network is a lightweight 3-layer SIREN MLP.
+# Backward modes:
+#   approx    - first-order approximation (default, recommended for training)
+#   implicit  - linear solve using cached Jacobian (medium cost)
+#   strict    - full closed-form J^T (expensive, for reference only)
+manifold_projection:
+  enabled: True
+  backward_mode: "approx"  # recommended: "approx" for training, "implicit" for tighter gradient
+  hidden_dim: 64          # SIREN hidden dimension
+  omega_0: 30.0           # SIREN first-layer frequency
+  sdf_lr: 1e-3            # learning rate for SDF network
+  sdf_reg_weight: 1e-4    # eikonal regularizer weight
+
+# Tangent Space Gradient Projection (Riemannian Optimization)
+# When enabled, the Euclidean gradient of Gaussian positions is projected onto
+# the manifold tangent space before the parameter update. This ensures that
+# Gaussian centers always remain on the surface during optimization.
+# The projection is: grad_tangent = (I - nn^T) @ grad_xyz
+# where n is the surface normal (SDF gradient).
+tangent_projection:
+  enabled: True  # Enable/disable tangent space gradient projection
+
+warmup: 10 # Wait until tracking gets to this frame
+delay: 5 # Delay between tracking and mapping
+
+# Online Optimization
+online_opt:
+  ## Local sliding optimization window
+  iters: 100 # Optimization iterations for selected views
+  n_last_frames: 10 # Always optimize the last n frames
+  n_rand_frames: 15 # Optimize random global frames on top
+
+  batch_mode: False # Only update a constant sized batch of frames
+  batch_size: 10 # Only add 5 frames at once to increase latency when batch_mode is deactivated
+  optimize_poses: False
+
+  ## Strategy for adding / pruning Gaussians
+  prune_every: 2 # Covisibility and opacity based pruning
+  pruning:
+    use_covisibility: True
+    use_plane_consistency: True
+    covisibility:
+      mode: "new" # ["abs", "new"] How to prune: either check for covisible frames everywhere or just in the last n frames
+      last: 10 # Prune only Gaussians added during the last k frames
+      dont_prune_latest: 0 # Never prune the latest Gaussians as this leads to unnecessary add / delete
+      visibility_th: 2 # Gaussians not visible by at least this many frames are pruned
+
+  # How often to prune and densify gaussians during optimization
+  prune_densify_every: 5 # This uses i) vanilla split and clone from 3DGS and ii) opacity based densification
+  prune_densify_until: 20 # dont do this after this iteration
+
+  ## Densification parameters
+  densify:
+    accumulate_pixels: False # Abs GS / Pixel GS averaging over gradients of contributing gaussians
+    # Vanilla 3DGS splitting and densification strategy
+    vanilla:
+      max_grad: 0.0001 # Gaussians with gradients above this are split (smaller -> denser)
+      abs_max_grad: 0.00015 # PGSR absolute-gradient threshold for splitting (used in PGSR strategy)
+      extent: 20  # Gaussians with scale smaller than self.percent_dense * extent get cloned (bigger -> denser)
+      min_opacity: 0.05 # Gaussians with opacity lower than this get pruned (bigger -> more pruning)
+      max_screen_size: 20 # Gaussians with radius bigger than this get pruned (smaller -> more pruning)
+    
+  # How to Filter the Tracking Map before feeding into Mapper
+  filter: # Parameter for filtering incoming points from the SLAM system
+    multiview: True # Only initialize Gaussians that are consistent in multiple views
+    mv_count_th: 2 # Pixels need to be consistent within bin_thresh distance across these k views
+    bin_th: 0.05 # Distance between points for binning, this depends on the scene scale, so be careful!
+    uncertainty: False # Only use very certain points for intializing Gaussians
+    conf_th: 0.025 # Only take pixels above this confidence
+
+# PGSR-specific optimization parameters
+opt_params:
+  init_lr: 6.0 # Default MonoGS: 6.0
+  position_lr_init: 1e-4 # Default MonoGS: 0.00016 (RGB mode has x10)
+  position_lr_final: 1e-6 # Default MonoGS: 0.0000016
+  position_lr_delay_mult: 0.01
+  position_lr_max_steps: 50 # Default MonoGS: 30000
+  feature_lr: 1e-3 # Default MonoGS: 0.0025
+  opacity_lr: 2e-2 # Default MonoGS: 0.05
+  scaling_lr: 1e-3 # Default MonoGS: 0.001
+  rotation_lr: 4e-4
+  percent_dense: 0.01 # default 0.01, this affects the densification of the Gaussians (lower -> more Gaussians)
+
+  # PGSR-style densification thresholds (used by training_setup)
+  abs_split_radii2D_threshold: 20 # Gate for absolute-grad splitting in screen space
+  max_abs_split_points: 0 # Cap number of absolute-gradient split points
+  max_all_points: 6000000 # Global cap to avoid explosion of Gaussians
+
+  # Pose optimization learning rates
+  cam_rot_delta: 1e-5 # Default MonoGS: 0.003
+  cam_trans_delta: 1e-5 # Default MonoGS: 0.001
+
+# PGSR loss parameters
+loss:
+  # Decide which terms to use
+  supervise_with_prior: True # Use the prior for supervision
+  with_ssim: True # Use SSIM on top of L1 loss
+  with_edge_weight: False # Weight informative pixels with high image gradient higher in loss
+  with_depth_smoothness: False # Similarity loss between depth and image gradients
+  use_ms_ssim: False # Multi-Scale SSIM loss
+  depth_func: l1 # 'l1', 'log_l1', 'l1_huber', 'pearson'
+  rgb_boundary_threshold: 0.0 # Pixel information threshold
+
+  # Weights
+  alpha1: 0.9 # Size of the mapping loss that the rgb takes up, the rest is depth
+  alpha2: 0.1 # Weight SSIM and L1 loss 
+  beta1: 5.0 # Regularizer on isotropic scale of the Gaussians (bigger -> more isotropic)
+  beta2: 0.01 # Edge-aware smoothness loss for depth
+  
+  # PGSR-specific loss weights
+  single_view_weight: 0.01 # Weight for single-view geometric consistency
+  single_view_weight_from_iter: 3 # Start single-view loss from this iteration
+  multi_view_weight: 0.1 # Weight for multi-view consistency
+  multi_view_weight_from_iter: 5 # Start multi-view loss from this iteration
+  scale_loss_weight: 10.0 # Weight for scale regularization
+
+# Offline Map Refinement for finetuning
+refinement:
+  optimize_poses: False
+  iters: 2000 # Optimize over this many different batches
+  batch_iters: 1 # Optimize each batch this many times
+  lr_factor: 0.1 # Change the learning rate for refinement
+  bs: 40 # Batch size for refinement 
+
+  # Sample according to loss order of frames and include non-keyframes if wanted
+  sampling:
+    use_non_keyframes: False # Use RGB non-keyframes as well during map refinement
+    kf_at_least: 0.5 # Always make sure to have > x% keyframes in a batch
+    weighted: False # Sample frames according to their loss
+    use_neighborhood: False # Use neighborhoods around random frames
+    neighborhood_size: 5 # How many frames to include in the neighborhood
+
+  prune_densify_every: 50 # This uses i) vanilla split and clone from 3DGS and ii) opacity based densification
+  densify_until: 250 # Dont densify/prune after this many iterations
+
+  densify:
+    # Vanilla 3DGS splitting and densification strategy
+    vanilla:
+      max_grad: 0.0001 # Gaussians with gradients above this are split (smaller -> denser)
+      extent: 20 # Gaussians with scale smaller than self.percent_dense * extent get cloned (bigger -> denser)
+      min_opacity: 0.05 # Gaussians with opacity lower than this get pruned (bigger -> more pruning)
+      max_screen_size: 20 # Gaussians with radius bigger than this get pruned (smaller -> more pruning)
+
+# Backpropagate the Render updates into Tracking system
+feedback:
+  warmup: 5 # Only start feeding back into tracking after we ran the Renderer k times
+  disps: False
+  poses: False
+  only_last_window: True # Dont feedback the random frames
+  no_refinement: False # Dont feedback after refinement
+  # Filtering args for feedback
+  kwargs:
+    opacity_threshold: 0.1
+    ignore_frames: [0, 1, 2, 3, 4, 5, 6] # Never feedback the initial frames
+    min_coverage: 0.5 # Min. Density of frame after eliminiating outliers
+    max_diff_to_video: 0.2 # Maximum abs. rel. deviation from the dense video depth
+
+# Parameters for transfer SLAM -> Renderer
+input:
+  sensor_type: 'depth'
+  pcd_downsample_init: 1 # This is a constant downsampling factor
+  pcd_downsample: 16 # You ideally have ~5-10k points per frame
+  adaptive_pointsize: False
+  point_size: 0.02
+  type: 'replica'
+
+# Default vanilla Gaussian Splatting parameters
+use_spherical_harmonics: False
+pipeline_params:
+  convert_SHs_python: False
+  compute_cov3D_python: False
+

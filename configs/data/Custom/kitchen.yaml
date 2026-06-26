@@ -1,0 +1,17 @@
+dataset: "folder"
+input_folder: /media/data/nerf/ours/kitchen/raw
+
+### original camera parameters
+cam:
+  H: 1920
+  W: 1080
+  H_out: 640
+  W_out: 360
+  H_edge: 0 
+  W_edge: 0
+  fx: null
+  fy: null
+  cx: 540
+  cy: 960
+  calibration_txt: ''
+  camera_model: "pinhole"

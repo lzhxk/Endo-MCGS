@@ -1,0 +1,22 @@
+dataset: 'replica'
+input_folder: "/data/C3VD/cecum_t1_b"
+fov_color_folder: "/data/C3VD/cecum_t1_b/color"  # Color images are in subdirectory
+png_depth_scale: 2.55 #for depth image in png format
+
+### camera parameters
+cam:
+  H: 540
+  W: 675
+  H_out: 360 # 320
+  W_out: 640 # 560
+  H_edge: 0
+  W_edge: 0
+  # fx: 401.1595
+  # fy: 400.9425
+  # cx: 334.143
+  # cy: 273.8665
+  fx: 500.0 # initial for nointrin
+  fy: 500.0
+  cx: 300.0
+  cy: 300.0
+  camera_model: "pinhole"

@@ -1,0 +1,159 @@
+# SDF-based Manifold Projection (can be overridden in specific mapping configs)
+# When enabled, Gaussian centres are projected onto the SDF zero level-set before rendering.
+manifold_projection:
+  enabled: False
+  backward_mode: "approx"
+  hidden_dim: 64
+  omega_0: 30.0
+  sdf_lr: 1e-3
+  sdf_reg_weight: 1e-4
+
+warmup: 10 # Wait until tracking gets to this frame
+delay: 5 # Delay between tracking and mapping (This should be >= 2, because else )
+
+# Online Optimization
+online_opt:
+  ## Local sliding optimization window
+  iters: 100 # Optimization iterations for selected views
+  n_last_frames: 10 # Always optimize the last n frames
+  n_rand_frames: 15 # Optimize random global frames on top
+
+  batch_mode: False # Only update a constant sized batch of frames (useful to speed things up when we run in parallel)
+  batch_size: 10 # Only add 5 frames at once to increase latency when batch_mode is deactivated
+  optimize_poses: False
+
+  ## Strategy for adding / pruning Gaussians
+  prune_every: 2 # Covisibility and opacity based pruning
+  pruning:
+    use_covisibility: True
+    covisibility:
+      # NOTE: Using the absolute visibility check is more wasteful as we need to count the visiblity of each Gaussian!
+      # -> Use 'new' for faster performance
+      mode: "new" # ["abs", "new"] How to prune: either check for covisible frames everywhere or just in the last n frames
+      last: 10 # Prune only Gaussians added during the last k frames (Hint: this needs to be <= n_last_frames)
+      dont_prune_latest: 0 # Never prune the latest Gaussians as this leads to unnecessary add / delete
+      visibility_th: 2 # Gaussians not visible by at least this many frames are pruned
+
+  # How often to prune and densify gaussians during optimization
+  prune_densify_every: 5 # This uses i) vanilla split and clone from 3DGS and ii) opacity based densification
+  prune_densify_until: 20 # dont do this after this iteration
+
+  ## Densification parameters
+  densify:
+    # FIXME this was not correctly implemented! We need to recompile the CUDA kernels with some changes added
+    accumulate_pixels: False # Abs GS / Pixel GS averaging over gradients of contributing gaussians
+    # Vanilla 3DGS splitting and densification strategy
+    vanilla:
+      max_grad: 0.001 # Gaussians with gradients above this are split (smaller -> denser)
+      extent: 6  # Gaussians with scale smaller than self.percent_dense * extent get cloned (bigger -> denser)
+      min_opacity: 0.01 # Gaussians with opacity lower than this get pruned (bigger -> more pruning)
+      max_screen_size: 10 # Gaussians with radius bigger than this get pruned (smaller -> more pruning)
+    
+  # How to Filter the Tracking Map before feeding into Mapper
+  filter: # Parameter for filtering incoming points from the SLAM system
+    multiview: True # Only initialize Gaussians that are consistent in multiple views
+    mv_count_th: 2 # Pixels need to be consistent within bin_thresh distance across these k views
+    bin_th: 0.05 # Distance between points for binning, this depends on the scene scale, so be careful!
+    uncertainty: False # Only use very certain points for intializing Gaussians
+    conf_th: 0.025 # Only take pixels above this confidence (Usually dynamic objects and obvious unuseful pixels like sky are below 0.1) 
+
+
+# MonoGS uses their defaults for a window size of 10
+# Since we want to independent to the batch_size, we adjust the learning rate accordingly
+# see: https://stackoverflow.com/questions/53033556/how-should-the-learning-rate-change-as-the-batch-size-change
+# -> lr = defaults / sqrt(10)
+# However, we need to be cautious of https://stats.stackexchange.com/questions/346299/whats-the-effect-of-scaling-a-loss-function-in-deep-learning
+opt_params:
+  init_lr: 6.0 # Default MonoGS: 6.0
+  position_lr_init: 1e-4 # Default MonoGS: 0.00016 (RGB mode has x10)
+  position_lr_final: 1e-6 # Default MonoGS: 0.0000016
+  position_lr_delay_mult: 0.01
+  position_lr_max_steps: 50 # Default MonoGS: 30000
+  feature_lr: 1e-3 # Default MonoGS: 0.0025
+  opacity_lr: 2e-2 # Default MonoGS: 0.05
+  scaling_lr: 1e-3 # Default MonoGS: 0.001
+  rotation_lr: 4e-4
+  percent_dense: 0.01 # default 0.01, this affects the densification of the Gaussians (lower -> more Gaussians)
+
+  # Pose optimization learning rates
+  cam_rot_delta: 1e-5 # Default MonoGS: 0.003
+  cam_trans_delta: 1e-5 # Default MonoGS: 0.001
+
+
+loss:
+  # Decide which terms to use
+  supervise_with_prior: True # Use the prior for supervision. If not, then use the current filtered map from SLAM (Hint: this is usually better as metrics are computed on all pixels)
+  with_ssim: True # Use SSIM on top of L1 loss (Hint: this is very useful for getting smoother surfaces)
+  with_edge_weight: False # Weight informative pixels with high image gradient higher in loss
+  with_depth_smoothness: False # Similarity loss between depth and image gradients
+  use_ms_ssim: False # Multi-Scale SSIM loss (Hint: This improves mainly PSNR at the cost of slightly worse LPIPS and L1)
+  depth_func: l1 # 'l1', 'log_l1', 'l1_huber', 'pearson' (Hint: We achieved best results simply with l1)
+  # NOTE this is from MonoGS, where they use 0.001. I dont like this setting as there are some black walls on Replica which affects performance
+  rgb_boundary_threshold: 0.0 # Pixel information in an image needs to be at least higher than this 
+
+  # Weights
+  alpha1: 0.7 # Size of the mapping loss that the rgb takes up, the rest is depth
+  alpha2: 0.2 # Weight SSIM and L1 loss 
+  beta1: 2.0 # Regularizer on isotropic scale of the Gaussians (bigger -> more isotropic)
+  beta2: 0.0001 # Edge-aware smoothness loss for depth (default 0.001 is common in monocular depth estimation)
+
+
+# Offline Map Refinement for finetuning
+refinement:
+  optimize_poses: False
+
+  iters: 2000 #0 # Optimize over this many different batches
+  batch_iters: 1 # Optimize each batch this many times
+  lr_factor: 0.1 # Change the learning rate for refinement
+  bs: 40 # Batch size for refinement 
+
+  # Sample according to loss order of frames and include non-keyframes if wanted
+  sampling:
+    use_non_keyframes: False # Use RGB non-keyframes as well during map refinement
+    kf_at_least: 0.5 # Always make sure to have > x% keyframes in a batch
+    weighted: False # Sample frames according to their loss, i.e. frames with higher loss have a higher probability
+    use_neighborhood: False # Use neighborhoods around random frames to have more spatial overlap
+    neighborhood_size: 5 # How many frames to include in the neighborhood
+
+  prune_densify_every: 50 # This uses i) vanilla split and clone from 3DGS and ii) opacity based densificatio# This has to be an uneven number
+  densify_until: 250 # Dont densify/prune after this many iterations, ALL gaussians are well optimized
+
+  densify:
+    # Vanilla 3DGS splitting and densification strategy
+    vanilla:
+      max_grad: 0.005 # Gaussians with gradients above this are split (smaller -> denser)
+      extent: 5 # Gaussians with scale smaller than self.percent_dense * extent get cloned (bigger -> denser)
+      min_opacity: 0.05 # Gaussians with opacity lower than this get pruned (bigger -> more pruning)
+      max_screen_size: 10 # Gaussians with radius bigger than this get pruned (smaller -> more pruning)
+
+
+# Backpropagate the Render updates into Tracking system
+feedback:
+  warmup: 5 # Only start feeding back into tracking after we ran the Renderer k times
+  disps: False
+  poses: False
+  only_last_window: True # Dont feedback the random frames, as pose optimization is better conditioned in temporal neighborhood
+  no_refinement: False # Dont feedback after refinement
+  # Filtering args for feedback
+  kwargs:
+    opacity_threshold: 0.1
+    ignore_frames: [0, 1, 2, 3, 4, 5, 6] # Never feedback the initial frames
+    min_coverage: 0.5 # Min. Density of frame after eliminiating outliers
+    max_diff_to_video: 0.2 # Maximum abs. rel. deviation from the dense video depth
+
+
+# Parameters for transfer SLAM -> Renderer
+input:
+  sensor_type: 'depth'
+  pcd_downsample_init: 1 # This is a constant downsampling factor
+  pcd_downsample: 16 # You ideally have ~5-10k points per frame
+  adaptive_pointsize: False
+  point_size: 0.02
+  type: 'replica'
+
+
+# Default vanilla Gaussian Splatting parameters
+use_spherical_harmonics: False
+pipeline_params:
+  convert_SHs_python: False
+  compute_cov3D_python: False

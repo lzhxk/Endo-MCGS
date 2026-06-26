@@ -1,0 +1,41 @@
+defaults:
+ - _self_
+ - mapping: tum.yaml
+ - tracking: base.yaml
+ - loop_closure: eigen.yaml
+ - data: Replica/base.yaml
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${now:%Y-%m-%d_%H-%M-%S}
+  job:
+    chdir: False
+    name: test
+
+device: "cuda:0"
+sync_method: strict
+mode: "mono"  # 'mono', 'prgbd', 'rgbd'
+mono_depth: "metric3d-vit_giant2" # 'zoed-nk', 'metric3d-vit_giant2', 'depthany-vitl-outdoor_left', 'depthany-vitl-indoor_left'
+stride: 2
+output_folder: ./outputs/
+with_dyn: False
+opt_intr: False # Optimizes additional intrinsic parameters
+# NOTE when using the Gaussian mapper we can increase this to ~5.0
+# -> you want a backend maybe every 5 frontend updates
+sleep_delay: 5.0 # Time delay to synchronize frontend and backend (default: 2.0)
+
+run_frontend: True # This should always be True!
+run_backend: True # Global optimization
+run_mapping: True # Rendering 
+run_loop_detection: False # Loop closure detection
+# Visualizations / GUIs
+run_visualization: False
+run_mapping_gui: False
+show_stream: False
+
+# Frequencies for synchronizing the different main parts of the pipeline
+# In an optimal setup, the Frontend would be the bottlenck, which can run at ~20-30FPS
+backend_every: 5 # Run global bundle adjustment only every k Frontend updates
+mapper_every: 3 # When using the Renderer in tandem to Frontend, we can optimize over very small batches of Cameras and few iterations!
+
+evaluate: False

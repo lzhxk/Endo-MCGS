@@ -1,0 +1,22 @@
+dataset: 'tumrgbd'
+input_folder: /media/data/tum_rgbd/benchmark_rgbd/fr1_room
+
+png_depth_scale: 5000.0 #for depth image in png format
+
+### original camera parameters
+cam:  
+  H: 480
+  W: 640
+  H_out: 320 # 480, 360, 320
+  W_out: 432 # 640, 480, 432
+  H_edge: 8 # 8
+  W_edge: 8 # 8
+  camera_model: "pinhole" # TODO do we need to adjust this?
+
+  ## Default
+  #NOTE: intrinsic is different per scene in TUM
+  # refer to https://vision.in.tum.de/data/datasets/rgbd-dataset/file_formats#intrinsic_camera_calibration_of_the_kinect
+  fx: 525.0
+  fy: 525.0
+  cx: 319.5
+  cy: 239.5

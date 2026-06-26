@@ -1,0 +1,79 @@
+defaults:
+ - _self_
+ - mapping: wild.yaml
+ - tracking: tum.yaml
+ - loop_closure: eigen.yaml
+ - data: TUM_RGBD/base.yaml
+
+hydra:
+  run:
+    dir: outputs/${hydra.job.name}/${exp}_${now:%Y-%m-%d_%H-%M-%S}_${mode}
+  job:
+    chdir: False
+    name: test-scared
+
+device: "cuda:0"
+sync_method: strict
+output_folder: ./outputs/
+exp: dataset_9_kf0
+
+stride: 1
+mode: "prgbd"  # 'mono', 'prgbd', 'rgbd'
+mono_depth: "metric3d-vit_giant2" # 'lotus_d' 'zoed-nk', 'metric3d-vit_giant2', 'depthany-vitl-outdoor', 'depthany-vitl-indoor'
+with_dyn: False # Filter out dynamic objects if masks are provided in the dataset
+opt_intr: False # Optimizes additional intrinsic parameters
+sleep_delay: 0.45 # Sleep timer to cool off the system sometimes
+
+## DM-Calib intrinsic estimation (completely independent from opt_intr)
+use_dm_calib: False # Use DM-Calib to estimate camera intrinsics from first frame
+dm_calib_model_path: "./pretrained/DM-Calib" # Path to DM-Calib pretrained model
+dm_calib_domain: "object" # Domain for DM-Calib: 'indoor', 'outdoor', 'object'
+dm_calib_processing_res: 768 # Processing resolution for DM-Calib
+dm_calib_denoise_steps: 20 # Number of diffusion denoising steps
+dm_calib_ensemble_size: 3 # Number of predictions to ensemble
+dm_calib_seed: 666 # Random seed for reproducibility
+
+## FoV Adaptation (triggered after warmup to re-estimate intrinsics with motion-guided angular ranges)
+use_fov_adaptation: False # Enable FoV adaptation after warmup
+fov_rho_min: 0.0 # Minimum rho for normalization (far-field baseline)
+fov_rho_max: 3.0 # Maximum rho for normalization (near-field ceiling)
+fov_alpha: 1.6 # Scaling factor for theta range adaptation
+fov_beta: 1.8 # Scaling factor for phi range adaptation
+fov_rho_base: 50.0 # Base rho value to fall back to if computation fails
+fov_min_keyframes: 4 # Below this count we still compute rho if >=1 pair; log a warning
+# Rho from farthest (largest metric Z) patch on the flow grid; mean_i(flow_patch_i / ||t_i||)
+fov_rho_use_deepest_patch: True
+fov_rho_patch_size: 7
+fov_rho_patch_min_valid_frac: 0.5
+
+## Components
+run_frontend: True # This should always be True!
+run_backend: True # Global optimization
+run_loop_detection: False # Loop closure detection
+run_mapping: True #False # Rendering 
+
+## Visualizations / GUIs
+run_visualization: False
+run_mapping_gui: False
+show_stream: False
+# plot_uncertainty: True # To show the uncertainty of the pose graph optimization
+
+# Flag for saving all rendered predictions for later purpose like visualization
+render_images: True # Render a comparison figure for each keyframe and kth non-keyframe
+save_rendered_predictions: True
+
+# You can start/stop in the middle of a sequence/dataset if you want
+# t_start: 0
+# t_stop: 50
+
+## Frequencies for synchronizing the different main parts of the pipeline
+# In an optimal setup, the Frontend would be the bottlenck, which can run at ~20-30FPS
+# Mapping takes ~5-7 iters/s, i.e. with a well tuned system each Render update hits <= 0.4fps
+backend_every: 8 # Run global bundle adjustment only every k Frontend updates
+# NOTE this is a trade-off between accuracy and speed, we can also add more compute to refinement!
+mapper_every: 15 # Run Renderer every k Frontend updates
+
+## Evaluation
+evaluate: True
+# Save intermediate visualizations: FoV adaptation flow (line + flow_to_image) and DM-Calib camera images
+save_evaluation_intermediate: False

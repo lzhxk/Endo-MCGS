@@ -1,0 +1,12 @@
+defaults:
+  - /tracking/base@_here_
+
+beta: 0.5
+
+backend: 
+  warmup: 25
+  window: 150
+  max_factor_mult: 16
+  thresh: 60.0
+  radius: 2
+  nms: 2
